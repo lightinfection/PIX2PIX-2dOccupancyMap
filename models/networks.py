@@ -3,6 +3,7 @@ import torch.nn as nn
 import functools
 from torch.autograd import Variable
 import numpy as np
+import torchvision.transforms.functional as TF
 
 ###############################################################################
 # Functions
@@ -187,29 +188,79 @@ class GlobalGenerator(nn.Module):
         super(GlobalGenerator, self).__init__()        
         activation = nn.ReLU(True)        
 
-        model = [nn.ReflectionPad2d(3), nn.Conv2d(input_nc, ngf, kernel_size=7, padding=0), norm_layer(ngf), activation]
         ### downsample
+        self.downs = nn.ModuleList()
+        self.downs.append(PipeBlock(input_nc, ngf, if_end=True, if_down=True, norm_layer=norm_layer, activation=activation))
         for i in range(n_downsampling):
             mult = 2**i
-            model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1),
-                      norm_layer(ngf * mult * 2), activation]
+            self.downs.append(PipeBlock(ngf * mult, ngf * mult * 2, if_end=False, if_down=True, norm_layer=norm_layer, activation=activation))
 
         ### resnet blocks
         mult = 2**n_downsampling
+        model = []
         for i in range(n_blocks):
             model += [ResnetBlock(ngf * mult, padding_type=padding_type, activation=activation, norm_layer=norm_layer)]
+        self.bottom = nn.Sequential(*model)
         
         ### upsample         
+        self.ups = nn.ModuleList()
         for i in range(n_downsampling):
             mult = 2**(n_downsampling - i)
-            model += [nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2), kernel_size=3, stride=2, padding=1, output_padding=1),
-                       norm_layer(int(ngf * mult / 2)), activation]
-        model += [nn.ReflectionPad2d(3), nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0), nn.Tanh()]        
-        self.model = nn.Sequential(*model)
-            
-    def forward(self, input):
-        return self.model(input)             
-        
+            self.ups.append(PipeBlock(ngf * mult, int(ngf * mult / 2), if_end=False, if_down=False, norm_layer=norm_layer, activation=activation))
+            self.ups.append(DoubleLayer(ngf * mult, int(ngf * mult / 2)))
+        self.ups.append(PipeBlock(ngf, output_nc, if_end=True, if_down=False, norm_layer=norm_layer, activation=activation))        
+
+    def forward(self, x):
+        skip_connections = []
+        for down in self.downs:
+            x = down(x)
+            skip_connections.append(x)
+        skip_connections = skip_connections[:-1][::-1]
+        x = self.bottom(x)
+        for idx in range(0, len(self.ups)-1, 2):
+            x = self.ups[idx](x)
+            skip_connection = skip_connections[idx//2]
+            if x.shape != skip_connection.shape:
+                x = TF.resize(x, size=skip_connection.shape[2:], interpolation=TF.InterpolationMode.NEAREST)
+            x_concat = torch.cat((skip_connection,x), dim=1)
+            x = self.ups[idx+1](x_concat)
+        output = self.ups[-1](x)
+        return output
+
+class DoubleLayer(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(DoubleLayer, self).__init__()
+        self.double_conv = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        return self.double_conv(x)
+
+class PipeBlock(nn.Module):
+    def __init__(self, dim_in, dim_out, if_end, if_down, norm_layer=nn.BatchNorm2d, activation=nn.ReLU(True)):
+        super(PipeBlock, self).__init__()
+        if if_end:
+            if if_down:
+                model = [nn.ReflectionPad2d(3), nn.Conv2d(dim_in, dim_out, kernel_size=7, padding=0, bias=False), norm_layer(dim_out), activation,
+                         nn.Conv2d(dim_out, dim_out, kernel_size=3, padding=1, bias=False), norm_layer(dim_out), activation]
+            else:
+                model = [nn.Conv2d(dim_in, dim_in, kernel_size=3, padding=1, bias=False), norm_layer(dim_in), activation,
+                         nn.ReflectionPad2d(3), nn.Conv2d(dim_in, dim_out, kernel_size=7, padding=0, bias=False), nn.Tanh()]
+        else:
+            model = [nn.Conv2d(dim_in, dim_out, kernel_size=3, stride=2, padding=1), norm_layer(dim_out), activation, DoubleLayer(dim_out, dim_out)
+                     ] if if_down else [
+                         nn.ConvTranspose2d(dim_in, dim_out, kernel_size=3, stride=2, padding=1, output_padding=1), norm_layer(int(dim_out)), activation]
+        self.conv = nn.Sequential(*model)
+
+    def forward(self, x):
+        return self.conv(x) 
+
 # Define a resnet block
 class ResnetBlock(nn.Module):
     def __init__(self, dim, padding_type, norm_layer, activation=nn.ReLU(True), use_dropout=False):

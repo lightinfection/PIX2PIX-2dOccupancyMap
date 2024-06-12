@@ -1,0 +1,8 @@
+lidar/ -- As real maps in train_B/ and test_B/
+mmwave/ -- As label maps in train_A/ and test_A/
+
+The names of a pair of maps in lidar/ and mmwave/ folders should be kept same. 
+
+Add "val" string for the map used for test when naming. If using opt.splitVal, "val_" will be automatically labelled in the image name.
+Add "obj" string for the map when naming, which is not actually the one of a large scenary but only a small object or site. 
+The difference of obj and a large map lies on the extraction method of known areas.

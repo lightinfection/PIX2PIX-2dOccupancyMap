@@ -10,7 +10,7 @@ class BaseOptions():
 
     def initialize(self):    
         # experiment specifics
-        self.parser.add_argument('--name', type=str, default='label2city', help='name of the experiment. It decides where to store samples and models')        
+        self.parser.add_argument('--name', type=str, default='w', help='name of the experiment. It decides where to store samples and models')        
         self.parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
         self.parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
         self.parser.add_argument('--model', type=str, default='pix2pixHD', help='which model to use')
@@ -24,17 +24,25 @@ class BaseOptions():
         # input/output sizes       
         self.parser.add_argument('--batchSize', type=int, default=1, help='input batch size')
         self.parser.add_argument('--loadSize', type=int, default=1024, help='scale images to this size')
-        self.parser.add_argument('--fineSize', type=int, default=512, help='then crop to this size')
-        self.parser.add_argument('--label_nc', type=int, default=35, help='# of input label channels')
-        self.parser.add_argument('--input_nc', type=int, default=3, help='# of input image channels')
-        self.parser.add_argument('--output_nc', type=int, default=3, help='# of output image channels')
+        self.parser.add_argument('--label_nc', type=int, default=0, help='# of input image channels')
+        self.parser.add_argument('--input_nc', type=int, default=1, help='# of input image channels')
+        self.parser.add_argument('--output_nc', type=int, default=1, help='# of output image channels')
+        # self.parser.add_argument('--output_classes', type=int, default=1, help='# of output image mask classes')
 
         # for setting inputs
-        self.parser.add_argument('--dataroot', type=str, default='./datasets/cityscapes/') 
-        self.parser.add_argument('--resize_or_crop', type=str, default='scale_width', help='scaling and cropping of images at load time [resize_and_crop|crop|scale_width|scale_width_and_crop]')
+        self.parser.add_argument('--dataroot', type=str, default='./maps/map/', help='raw pgm dataroot') 
+        self.parser.add_argument('--saveroot', type=str, default='./maps/w/', help='aligned pgm maps saving root')
+        self.parser.add_argument('--valroot', type=str, default='./maps/val/', help='validation map saving root')
         self.parser.add_argument('--serial_batches', action='store_true', help='if true, takes images in order to make batches, otherwise takes them randomly')        
-        self.parser.add_argument('--no_flip', action='store_true', help='if specified, do not flip the images for data argumentation') 
         self.parser.add_argument('--nThreads', default=2, type=int, help='# threads for loading data')                
+        self.parser.add_argument('--tolerance', type=float, default=0.2, help='expansion ratio of known grid infomation in pgm maps before resizing and loading the images')
+        self.parser.add_argument('--crop_and_resize', action='store_true', help='if specified, crop and padding of images for data augmentation')
+        self.parser.add_argument('--randomCrop', action='store_true', help='if specified, crop the images randomly, otherwise averagely')
+        self.parser.add_argument('--times', type=int, default=6, help='if cropping, crop one raw image into this number of pieces')
+        self.parser.add_argument('--flip', action='store_true', help='if specified, flip the images for data argumentation') 
+        self.parser.add_argument('--rotate', action='store_true', help='if specified, rotate the images for data argumentation') 
+        self.parser.add_argument('--saveImage', action='store_true', help='if specified, save aligned maps to the specified folders') 
+        self.parser.add_argument('--splitVal', action='store_true', help='if specified, randomly choose 0.1 ratio of total image for validation') 
         self.parser.add_argument('--max_dataset_size', type=int, default=float("inf"), help='Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.')
 
         # for displays
@@ -45,7 +53,7 @@ class BaseOptions():
         self.parser.add_argument('--netG', type=str, default='global', help='selects model to use for netG')
         self.parser.add_argument('--ngf', type=int, default=64, help='# of gen filters in first conv layer')
         self.parser.add_argument('--n_downsample_global', type=int, default=4, help='number of downsampling layers in netG') 
-        self.parser.add_argument('--n_blocks_global', type=int, default=9, help='number of residual blocks in the global generator network')
+        self.parser.add_argument('--n_blocks_global', type=int, default=1, help='number of residual blocks in the global generator network')
         self.parser.add_argument('--n_blocks_local', type=int, default=3, help='number of residual blocks in the local enhancer network')
         self.parser.add_argument('--n_local_enhancers', type=int, default=1, help='number of local enhancers to use')        
         self.parser.add_argument('--niter_fix_global', type=int, default=0, help='number of epochs that we only train the outmost local enhancer')        
@@ -53,7 +61,8 @@ class BaseOptions():
         # for instance-wise features
         self.parser.add_argument('--no_instance', action='store_true', help='if specified, do *not* add instance map as input')        
         self.parser.add_argument('--instance_feat', action='store_true', help='if specified, add encoded instance features as input')
-        self.parser.add_argument('--label_feat', action='store_true', help='if specified, add encoded label features as input')        
+        self.parser.add_argument('--label_feat', action='store_true', help='if specified, add encoded label features as input')
+        self.parser.add_argument("--mask_output", action="store_true", help="if specified, change unet n_classes masks as output")        
         self.parser.add_argument('--feat_num', type=int, default=3, help='vector length for encoded features')        
         self.parser.add_argument('--load_features', action='store_true', help='if specified, load precomputed feature maps')
         self.parser.add_argument('--n_downsample_E', type=int, default=4, help='# of downsampling layers in encoder') 

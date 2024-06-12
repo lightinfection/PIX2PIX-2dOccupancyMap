@@ -39,10 +39,15 @@ class BaseModel(torch.nn.Module):
         pass
 
     # helper saving function that can be used by subclasses
-    def save_network(self, network, network_label, epoch_label, gpu_ids):
+    def save_network(self, network, network_label, epoch_label, gpu_ids, masks=None):
         save_filename = '%s_net_%s.pth' % (epoch_label, network_label)
         save_path = os.path.join(self.save_dir, save_filename)
-        torch.save(network.cpu().state_dict(), save_path)
+        if self.opt.mask_output:
+            state_dict = network.cpu().state_dict()
+            state_dict['mask_values'] = masks
+            torch.save(state_dict, save_path)
+        if not self.opt.mask_output:
+            torch.save(network.cpu().state_dict(), save_path)
         if len(gpu_ids) and torch.cuda.is_available():
             network.cuda()
 
@@ -59,7 +64,12 @@ class BaseModel(torch.nn.Module):
         else:
             #network.load_state_dict(torch.load(save_path))
             try:
-                network.load_state_dict(torch.load(save_path))
+                if self.opt.mask_output:
+                    pretrained_dict = torch.load(save_path)                
+                    self.mask_values = pretrained_dict.pop("mask_values", [0, 1])
+                    network.load_state_dict(pretrained_dict)
+                if not self.opt.mask_output:
+                    network.load_state_dict(torch.load(save_path))
             except:   
                 pretrained_dict = torch.load(save_path)                
                 model_dict = network.state_dict()
