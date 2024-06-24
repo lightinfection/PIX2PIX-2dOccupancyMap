@@ -1,6 +1,6 @@
 python3 ../test.py --no_instance \
                     --checkpoints_dir ../checkpoints/ \
-                    --name w \
+                    --name w_attention_unet \
                     --results_dir ../results/ \
                     --gpu_ids 0 \
                     --loadSize 128 \

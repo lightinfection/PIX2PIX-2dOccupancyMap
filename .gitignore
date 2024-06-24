@@ -38,8 +38,8 @@ test/data/legacy_serialized.pt
 *.DS_Store
 *~
 maps/__pycache__
-maps/w/*
-maps/val/*
+maps/w/*/*
+maps/val/*/*
 maps/map/*/1*
 maps/map/*/2*
 maps/map/*/6*
@@ -60,3 +60,5 @@ maps/map/*/obj_20*
 checkpoints/
 results/
 temp_rm/
+pack/
+*.zip

@@ -7,15 +7,15 @@ import os
 
 # Converts a Tensor into a Numpy array
 # |imtype|: the desired type of the converted numpy array
-def tensor2im(image_tensor, imtype=np.uint8, normalize=True):
+def tensor2im(image_tensor, imtype=np.uint8, normalize=True, default_stats=True):
     if isinstance(image_tensor, list):
         image_numpy = []
         for i in range(len(image_tensor)):
-            image_numpy.append(tensor2im(image_tensor[i], imtype, normalize))
+            image_numpy.append(tensor2im(image_tensor[i], imtype, normalize, default_stats))
         return image_numpy
     image_numpy = image_tensor.cpu().float().numpy()
     if normalize:
-        image_numpy = (np.transpose(image_numpy, (1, 2, 0)) + 1) / 2.0 * 255.0
+        image_numpy = (np.transpose(image_numpy, (1, 2, 0)) + 1) / 2.0 * 255.0 if default_stats else (np.transpose(image_numpy, (1, 2, 0)) *0.24 + 0.80) * 255.0
     else:
         image_numpy = np.transpose(image_numpy, (1, 2, 0)) * 255.0      
     image_numpy = np.clip(image_numpy, 0, 255)
@@ -24,9 +24,9 @@ def tensor2im(image_tensor, imtype=np.uint8, normalize=True):
     return image_numpy.astype(imtype)
 
 # Converts a one-hot tensor into a colorful label map
-def tensor2label(label_tensor, n_label, imtype=np.uint8):
+def tensor2label(label_tensor, n_label, imtype=np.uint8, normalize=True, stats=True):
     if n_label == 0:
-        return tensor2im(label_tensor, imtype)
+        return tensor2im(label_tensor, imtype, normalize=normalize, default_stats=stats)
     label_tensor = label_tensor.cpu().float()    
     if label_tensor.size()[0] > 1:
         label_tensor = label_tensor.max(0, keepdim=True)[1]

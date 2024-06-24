@@ -1,0 +1,17 @@
+python3 ../train.py --no_instance \
+                    --checkpoints_dir ../checkpoints/ \
+                    --name w_unet_splitVal \
+                    --dataroot ../maps/map/ \
+                    --saveroot ../maps/w/ \
+                    --valroot ../maps/val/ \
+                    --gpu_ids 0 \
+                    --saveImage \
+                    --splitVal \
+                    --save_epoch_freq 10 \
+                    --loadSize 128 \
+                    --crop_and_resize \
+                    --randomCrop \
+                    --flip \
+                    --rotate \
+                    --ngf 32 \
+                    --lambda_feat 5

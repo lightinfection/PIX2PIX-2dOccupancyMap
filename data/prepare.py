@@ -6,6 +6,8 @@ from yaml import load, BaseLoader
 from shutil import copy
 
 UNKNOWN_PIXEL = 205
+FREE_PIXEL = 254
+OCC_PIXEL = 0
 
 class BaseDataset(data.Dataset):
     def __init__(self):
@@ -25,6 +27,7 @@ class pgm:
         """
         self.path = folder
         self.data = []
+        self.idx_ = np.array([], dtype=np.uint8)
 
     def load_data(self, split=False, ratio=0.2, dst="", idx=[]):
         """
@@ -40,9 +43,8 @@ class pgm:
             for fname in fnames:
                 file_no.append(os.path.splitext(fname)[0])
         file_no = np.unique(file_no)
-        if not idx:
-            seed = np.random.default_rng()
-            self.idx_ = idx = seed.choice(len(file_no), int(len(file_no)*ratio), replace=False)
+        if split and not idx:
+            self.idx_ = idx = np.random.choice(len(file_no), int(len(file_no)*ratio), replace=False)
         count = 0
         for f in file_no:
             try:
@@ -71,6 +73,21 @@ class pgm:
             origin_x = float(map_config[2].split(":")[-1].split(",")[0].replace("[",""))
             origin_y = float(map_config[2].split(":")[-1].split(",")[1].replace(" ",""))
             return origin_x, origin_y, resolution
+    
+    def get_basic_stats(self):
+        num_occ = num_free = num_unknown = total = 0
+        for idx, data in enumerate(self.data):
+            img = data["data"]
+            total += img.shape[0] * img.shape[1]
+            num_occ += len(img[img == OCC_PIXEL])
+            num_free += len(img[img == FREE_PIXEL])
+            num_unknown += len(img[img == UNKNOWN_PIXEL])
+        assert((num_occ + num_free + num_unknown) == total)
+        self.mean = (num_occ * OCC_PIXEL + num_free * FREE_PIXEL + num_unknown * UNKNOWN_PIXEL) / (total * 255)
+        self.std = np.sqrt((num_occ * np.square(OCC_PIXEL/255 - self.mean) + num_free * np.square(FREE_PIXEL/255 - self.mean) + num_unknown * np.square(UNKNOWN_PIXEL/255 - self.mean)) / total)
+        stats = "Mean of the dataset in usage is {m:.4f}, STD is {v:.4f}".format(m = self.mean, v = self.std)
+        print(stats)
+        return
 
     @staticmethod 
     # compute the origin deviation of mmwave map based on a fact that the origins of maps built by lidar and mmwave should be the same
@@ -207,10 +224,8 @@ class augmentor:
                 return
             else: img_ = img
             if not self.keep_same_pos:
-                rng_x = np.random.default_rng()
-                rng_y = np.random.default_rng()
-                x = rng_x.choice(np.arange(img_.shape[1]-self.size_),times,replace=False)
-                y = rng_y.choice(np.arange(img_.shape[0]-self.size_),times,replace=False)
+                x = np.random.choice(np.arange(img_.shape[1]-self.size_),times,replace=False)
+                y = np.random.choice(np.arange(img_.shape[0]-self.size_),times,replace=False)
                 self.pos.append([x, y])
             else: 
                 if len(pos_x) == times and len(pos_y) == times:
@@ -289,11 +304,11 @@ class augmentor:
     def save(self, path, img):
         if "val" in path:
             if self.write_: cv.imwrite(path, img)
-            self.val_session.append((path, img.astype(np.float32)))
+            self.val_session.append((path, np.expand_dims(img.astype(np.float32), axis=2)))
             return
         if self.quick_check(img):
             self.total += 1
-            self.session.append((path, img.astype(np.float32)))
+            self.session.append((path, np.expand_dims(img.astype(np.float32), axis=2)))
             if self.write_: cv.imwrite(path, img)
         else:
             print("Writing images failed due to incorrect shape: {fpath}".format(fpath=path))
@@ -302,7 +317,7 @@ class augmentor:
         if img.shape == (self.size_, self.size_): return True
         else: False
 
-def uniform_data(lidar_lst, mm_lst, tolerance=0.2):
+def uniform_data(lidar_lst, mm_lst, tolerance=0.2, mask=False):
     """
     tolerance: 0~1, expand image borders by shape*tolerance after ROI extraction
     """
@@ -313,6 +328,7 @@ def uniform_data(lidar_lst, mm_lst, tolerance=0.2):
         if lidar_lst[i]["name"] != mm_lst[i]["name"]:
             print("the names of two pgms in lidar and mmwave folders are not same... shut down.")
             return
+        if "val" in mm_lst[i]["name"]: continue
         try:
             # Align images with the same physical origin and img size
             mm_img, lidar_img = pgm.align_(mm_lst[i], lidar_lst[i])
@@ -350,16 +366,26 @@ def uniform_data(lidar_lst, mm_lst, tolerance=0.2):
             lidar_lst[i]["origin"][1] -= int(roi_h*tolerance) * lidar_lst[i]["resolution"]
             lidar_lst[i]["data"] = lidar_img
             mm_lst[i]["data"] = mm_img
-
             ## For debug
             # cv.imshow(lidar_lst[i]["name"]+"_lidar", lidar_lst[i]["data"])
             # cv.imshow(lidar_lst[i]["name"]+"_mmwave", mm_lst[i]["data"])
             # cv.waitKey(0)
 
+            # Mask image
+
         except Exception:
             print("image resizing went wrong:", Exception.args())
             return
     return 
+
+def mask_(img):
+    if not isinstance(img, np.ndarray): 
+        print("masks failed")
+        return
+    if img.ndim == 2: unique_values = np.unique(img) 
+    if img.ndim == 3: unique_values = np.unique(img.reshape(-1, img.shape[-1]), axis=0) 
+    
+    return
 
 def main():
     # Parse paths def function()

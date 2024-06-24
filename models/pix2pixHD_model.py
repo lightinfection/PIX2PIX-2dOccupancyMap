@@ -32,15 +32,12 @@ class Pix2PixHDModel(BaseModel):
         if not opt.no_instance:
             netG_input_nc += 1
         if self.use_features:
-            netG_input_nc += opt.feat_num                  
-        if not self.opt.mask_output:
-            self.netG = networks.define_G(netG_input_nc, opt.output_nc, opt.ngf, opt.netG, 
-                                        opt.n_downsample_global, opt.n_blocks_global, opt.n_local_enhancers, 
-                                        opt.n_blocks_local, opt.norm, gpu_ids=self.gpu_ids)        
-        if self.opt.mask_output:
-            self.netG = networks.define_G(netG_input_nc, opt.output_classes, opt.ngf, opt.netG, 
-                                        opt.n_downsample_global, opt.n_blocks_global, opt.n_local_enhancers, 
-                                        opt.n_blocks_local, opt.norm, gpu_ids=self.gpu_ids)        
+            netG_input_nc += opt.feat_num
+        real_output_nc = opt.output_nc if not self.opt.mask_output else opt.output_classes
+        self.netG = networks.define_G(netG_input_nc, real_output_nc, opt.ngf, opt.netG, 
+                                    opt.n_downsample_global, opt.n_blocks_global, opt.n_local_enhancers, 
+                                    opt.n_blocks_local, opt.norm, gpu_ids=self.gpu_ids, 
+                                    use_activation=not opt.define_norm, use_sigmoid=opt.no_norm_input, use_attention=opt.attention)
 
         # Discriminator network
         if self.isTrain:
@@ -117,7 +114,8 @@ class Pix2PixHDModel(BaseModel):
     def encode_input(self, label_map, real_image=None, infer=False):             
         input_label = label_map.data.cuda()
         # get edges from instance map      
-        input_label = Variable(input_label, volatile=infer)
+        with torch.no_grad():
+            input_label = Variable(input_label)
         # real images for training
         if real_image is not None: real_image = Variable(real_image.data.cuda())
         return input_label, real_image
@@ -217,60 +215,6 @@ class Pix2PixHDModel(BaseModel):
                 return out
             
         return fake_image
-
-    def sample_features(self, inst): 
-        # read precomputed feature clusters 
-        cluster_path = os.path.join(self.opt.checkpoints_dir, self.opt.name, self.opt.cluster_path)        
-        features_clustered = np.load(cluster_path, encoding='latin1').item()
-
-        # randomly sample from the feature clusters
-        inst_np = inst.cpu().numpy().astype(int)                                      
-        feat_map = self.Tensor(inst.size()[0], self.opt.feat_num, inst.size()[2], inst.size()[3])
-        for i in np.unique(inst_np):    
-            label = i if i < 1000 else i//1000
-            if label in features_clustered:
-                feat = features_clustered[label]
-                cluster_idx = np.random.randint(0, feat.shape[0]) 
-                                            
-                idx = (inst == int(i)).nonzero()
-                for k in range(self.opt.feat_num):                                    
-                    feat_map[idx[:,0], idx[:,1] + k, idx[:,2], idx[:,3]] = feat[cluster_idx, k]
-        if self.opt.data_type==16:
-            feat_map = feat_map.half()
-        return feat_map
-
-    def encode_features(self, image, inst):
-        image = Variable(image.cuda(), volatile=True)
-        feat_num = self.opt.feat_num
-        h, w = inst.size()[2], inst.size()[3]
-        block_num = 32
-        feat_map = self.netE.forward(image, inst.cuda())
-        inst_np = inst.cpu().numpy().astype(int)
-        feature = {}
-        for i in range(self.opt.label_nc):
-            feature[i] = np.zeros((0, feat_num+1))
-        for i in np.unique(inst_np):
-            label = i if i < 1000 else i//1000
-            idx = (inst == int(i)).nonzero()
-            num = idx.size()[0]
-            idx = idx[num//2,:]
-            val = np.zeros((1, feat_num+1))                        
-            for k in range(feat_num):
-                val[0, k] = feat_map[idx[0], idx[1] + k, idx[2], idx[3]].data[0]            
-            val[0, feat_num] = float(num) / (h * w // block_num)
-            feature[label] = np.append(feature[label], val, axis=0)
-        return feature
-
-    def get_edges(self, t):
-        edge = torch.cuda.ByteTensor(t.size()).zero_()
-        edge[:,:,:,1:] = edge[:,:,:,1:] | (t[:,:,:,1:] != t[:,:,:,:-1])
-        edge[:,:,:,:-1] = edge[:,:,:,:-1] | (t[:,:,:,1:] != t[:,:,:,:-1])
-        edge[:,:,1:,:] = edge[:,:,1:,:] | (t[:,:,1:,:] != t[:,:,:-1,:])
-        edge[:,:,:-1,:] = edge[:,:,:-1,:] | (t[:,:,1:,:] != t[:,:,:-1,:])
-        if self.opt.data_type==16:
-            return edge.half()
-        else:
-            return edge.float()
 
     def save(self, which_epoch, masks=None):
         self.save_network(self.netG, 'G', which_epoch, self.gpu_ids, masks)

@@ -6,16 +6,6 @@ from data.prepare import BaseDataset, pgm, augmentor, uniform_data
 # from multiprocessing import Pool
 # from tqdm import tqdm
 
-# def unique_mask_values(img):
-#     mask = np.asarray(Image.open(img))
-#     if mask.ndim == 2:
-#         return np.unique(mask)
-#     elif mask.ndim == 3:
-#         mask = mask.reshape(-1, mask.shape[-1])
-#         return np.unique(mask, axis=0)
-#     else:
-#         raise ValueError(f'Loaded masks should have 2 or 3 dimensions, found {mask.ndim}')
-
 class AlignedDataset(BaseDataset):
     def initialize(self, opt):
         self.opt = opt
@@ -100,8 +90,9 @@ class AlignedDataset(BaseDataset):
         if self.opt.isTrain:
             B_path = self.B_input[index][0]
             assert(A_path.split("/")[-1] == B_path.split("/")[-1])
-        transform_list = [transforms.ToTensor(),
-                          transforms.Normalize((0.5), (0.5))]
+        transform_list = [transforms.ToTensor()]
+        if not self.opt.no_norm_input:
+            transform_list += [transforms.Normalize((0.5), (0.5))] if not self.opt.define_norm else [transforms.Normalize((0.80), (0.24))]
         transform_ = transforms.Compose(transform_list)
         A_tensor = transform_(self.A_input[index][1])
         B_tensor = 0

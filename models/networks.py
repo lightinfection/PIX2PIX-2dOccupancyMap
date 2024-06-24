@@ -26,10 +26,10 @@ def get_norm_layer(norm_type='instance'):
     return norm_layer
 
 def define_G(input_nc, output_nc, ngf, netG, n_downsample_global=3, n_blocks_global=9, n_local_enhancers=1, 
-             n_blocks_local=3, norm='instance', gpu_ids=[]):    
+             n_blocks_local=3, norm='instance', gpu_ids=[], use_activation=True, use_sigmoid=False, use_attention=False):    
     norm_layer = get_norm_layer(norm_type=norm)     
     if netG == 'global':    
-        netG = GlobalGenerator(input_nc, output_nc, ngf, n_downsample_global, n_blocks_global, norm_layer)       
+        netG = GlobalGenerator(input_nc, output_nc, ngf, n_downsample_global, n_blocks_global, norm_layer, use_activation, use_sigmoid, use_attention)       
     elif netG == 'local':        
         netG = LocalEnhancer(input_nc, output_nc, ngf, n_downsample_global, n_blocks_global, 
                                   n_local_enhancers, n_blocks_local, norm_layer)
@@ -163,7 +163,8 @@ class LocalEnhancer(nn.Module):
             setattr(self, 'model'+str(n)+'_1', nn.Sequential(*model_downsample))
             setattr(self, 'model'+str(n)+'_2', nn.Sequential(*model_upsample))                  
         
-        self.downsample = nn.AvgPool2d(3, stride=2, padding=[1, 1], count_include_pad=False)
+        # self.downsample = nn.AvgPool2d(3, stride=2, padding=[1, 1], count_include_pad=False)
+        self.downsample = nn.MaxPool2d(2)
 
     def forward(self, input): 
         ### create input pyramid
@@ -182,11 +183,12 @@ class LocalEnhancer(nn.Module):
         return output_prev
 
 class GlobalGenerator(nn.Module):
-    def __init__(self, input_nc, output_nc, ngf=64, n_downsampling=3, n_blocks=9, norm_layer=nn.BatchNorm2d, 
+    def __init__(self, input_nc, output_nc, ngf=64, n_downsampling=3, n_blocks=9, norm_layer=nn.BatchNorm2d, use_activation=True, use_sigmoid=False, use_attention=False,
                  padding_type='reflect'):
         assert(n_blocks >= 0)
         super(GlobalGenerator, self).__init__()        
-        activation = nn.ReLU(True)        
+        activation = nn.ReLU(True)
+        self.attention = use_attention        
 
         ### downsample
         self.downs = nn.ModuleList()
@@ -207,8 +209,9 @@ class GlobalGenerator(nn.Module):
         for i in range(n_downsampling):
             mult = 2**(n_downsampling - i)
             self.ups.append(PipeBlock(ngf * mult, int(ngf * mult / 2), if_end=False, if_down=False, norm_layer=norm_layer, activation=activation))
-            self.ups.append(DoubleLayer(ngf * mult, int(ngf * mult / 2)))
-        self.ups.append(PipeBlock(ngf, output_nc, if_end=True, if_down=False, norm_layer=norm_layer, activation=activation))        
+            if self.attention: self.ups.append(AttentionBlock(int(ngf * mult / 2), int(ngf * mult / 2), int(ngf * mult / 4), norm_layer=norm_layer, activation=activation))
+            self.ups.append(DoubleLayer(ngf * mult, int(ngf * mult / 2), norm_layer=norm_layer, activation=activation))
+        self.ups.append(PipeBlock(ngf, output_nc, if_end=True, if_down=False, norm_layer=norm_layer, activation=activation, use_activation=use_activation, use_sigmoid=use_sigmoid))        
 
     def forward(self, x):
         skip_connections = []
@@ -217,45 +220,75 @@ class GlobalGenerator(nn.Module):
             skip_connections.append(x)
         skip_connections = skip_connections[:-1][::-1]
         x = self.bottom(x)
-        for idx in range(0, len(self.ups)-1, 2):
+        jump = 3 if self.attention else 2
+        for idx in range(0, len(self.ups)-1, jump):
             x = self.ups[idx](x)
-            skip_connection = skip_connections[idx//2]
+            skip_connection = skip_connections[idx//jump]
             if x.shape != skip_connection.shape:
                 x = TF.resize(x, size=skip_connection.shape[2:], interpolation=TF.InterpolationMode.NEAREST)
+            skip_connection = self.ups[idx+1](x, skip_connection)
             x_concat = torch.cat((skip_connection,x), dim=1)
-            x = self.ups[idx+1](x_concat)
+            x = self.ups[idx+jump-1](x_concat)
         output = self.ups[-1](x)
         return output
 
 class DoubleLayer(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, norm_layer=nn.BatchNorm2d, activation=nn.ReLU(True)):
         super(DoubleLayer, self).__init__()
         self.double_conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True)
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            norm_layer(out_channels),
+            activation,
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            norm_layer(out_channels),
+            activation
         )
 
     def forward(self, x):
         return self.double_conv(x)
 
+class AttentionBlock(nn.Module):
+    def __init__(self, in_channels_g, in_channels_x, out_channels, norm_layer=nn.BatchNorm2d, activation=nn.ReLU((True))):
+        super(AttentionBlock, self).__init__()
+        self.w_g = nn.Sequential(
+            nn.Conv2d(in_channels_g, out_channels, kernel_size=1, padding=0),
+            norm_layer(out_channels)
+        )
+        self.w_x = nn.Sequential(
+            nn.Conv2d(in_channels_x, out_channels, kernel_size=1, padding=0),
+            norm_layer(out_channels)
+        )
+        self.psi = nn.Sequential(
+            nn.Conv2d(out_channels, 1, kernel_size=1, padding=0),
+            norm_layer(1),
+            nn.Sigmoid()
+        )
+        self.al = activation
+
+    def forward(self, g, x):
+        g_ = self.w_g(g)
+        x_ = self.w_x(x)
+        psi = self.al(g_ + x_)
+        psi_ = self.psi(psi)
+        return x * psi_
+
 class PipeBlock(nn.Module):
-    def __init__(self, dim_in, dim_out, if_end, if_down, norm_layer=nn.BatchNorm2d, activation=nn.ReLU(True)):
+    def __init__(self, dim_in, dim_out, if_end, if_down, norm_layer=nn.BatchNorm2d, activation=nn.ReLU(True), use_activation=True, use_sigmoid=False):
         super(PipeBlock, self).__init__()
         if if_end:
             if if_down:
-                model = [nn.ReflectionPad2d(3), nn.Conv2d(dim_in, dim_out, kernel_size=7, padding=0, bias=False), norm_layer(dim_out), activation,
-                         nn.Conv2d(dim_out, dim_out, kernel_size=3, padding=1, bias=False), norm_layer(dim_out), activation]
+                model = [nn.ReflectionPad2d(3), nn.Conv2d(dim_in, dim_out, kernel_size=7, padding=0), norm_layer(dim_out), activation,
+                         nn.Conv2d(dim_out, dim_out, kernel_size=3, padding=1), norm_layer(dim_out), activation]
             else:
-                model = [nn.Conv2d(dim_in, dim_in, kernel_size=3, padding=1, bias=False), norm_layer(dim_in), activation,
-                         nn.ReflectionPad2d(3), nn.Conv2d(dim_in, dim_out, kernel_size=7, padding=0, bias=False), nn.Tanh()]
+                model = [nn.Conv2d(dim_in, dim_in, kernel_size=3, padding=1), norm_layer(dim_in), activation,
+                         nn.ReflectionPad2d(3), nn.Conv2d(dim_in, dim_out, kernel_size=7, padding=0)]
+                if use_activation:
+                    model += [nn.Sigmoid()] if use_sigmoid else [nn.Tanh()]
         else:
-            model = [nn.Conv2d(dim_in, dim_out, kernel_size=3, stride=2, padding=1), norm_layer(dim_out), activation, DoubleLayer(dim_out, dim_out)
-                     ] if if_down else [
-                         nn.ConvTranspose2d(dim_in, dim_out, kernel_size=3, stride=2, padding=1, output_padding=1), norm_layer(int(dim_out)), activation]
+            model = [#nn.Conv2d(dim_in, dim_out, kernel_size=3, stride=2, padding=1), norm_layer(dim_out), activation, 
+                    nn.MaxPool2d(2),
+                     DoubleLayer(dim_in, dim_out, norm_layer=norm_layer, activation=activation)] if if_down else [
+                         nn.ConvTranspose2d(dim_in, dim_out, kernel_size=3, stride=2, padding=1, output_padding=1), norm_layer(dim_out), activation]
         self.conv = nn.Sequential(*model)
 
     def forward(self, x):
@@ -356,7 +389,8 @@ class MultiscaleDiscriminator(nn.Module):
             else:
                 setattr(self, 'layer'+str(i), netD.model)
 
-        self.downsample = nn.AvgPool2d(3, stride=2, padding=[1, 1], count_include_pad=False)
+        # self.downsample = nn.AvgPool2d(3, stride=2, padding=[1, 1], count_include_pad=False)
+        self.downsample = nn.MaxPool2d(2)
 
     def singleD_forward(self, model, input):
         if self.getIntermFeat:

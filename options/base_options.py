@@ -41,6 +41,8 @@ class BaseOptions():
         self.parser.add_argument('--times', type=int, default=6, help='if cropping, crop one raw image into this number of pieces')
         self.parser.add_argument('--flip', action='store_true', help='if specified, flip the images for data argumentation') 
         self.parser.add_argument('--rotate', action='store_true', help='if specified, rotate the images for data argumentation') 
+        self.parser.add_argument('--define_norm', action='store_true', help='if specified, use customized dataset mean and std values rather than 0.5 to normalize input data') 
+        self.parser.add_argument('--no_norm_input', action='store_true', help='if specified, do not normalize input after rescaling when loading data') 
         self.parser.add_argument('--saveImage', action='store_true', help='if specified, save aligned maps to the specified folders') 
         self.parser.add_argument('--splitVal', action='store_true', help='if specified, randomly choose 0.1 ratio of total image for validation') 
         self.parser.add_argument('--max_dataset_size', type=int, default=float("inf"), help='Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.')
@@ -57,6 +59,7 @@ class BaseOptions():
         self.parser.add_argument('--n_blocks_local', type=int, default=3, help='number of residual blocks in the local enhancer network')
         self.parser.add_argument('--n_local_enhancers', type=int, default=1, help='number of local enhancers to use')        
         self.parser.add_argument('--niter_fix_global', type=int, default=0, help='number of epochs that we only train the outmost local enhancer')        
+        self.parser.add_argument('--attention', action='store_true', help='add attention block to the skip connection layer of unet')        
 
         # for instance-wise features
         self.parser.add_argument('--no_instance', action='store_true', help='if specified, do *not* add instance map as input')        

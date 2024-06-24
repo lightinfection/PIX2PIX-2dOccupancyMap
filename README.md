@@ -2,10 +2,9 @@
 
 A large amount of raw code is referred to [pix2pixHD](https://github.com/NVIDIA/pix2pixHD).
 
-## Enviornment
-- linux or MacOS
-- numpy: 1.24.0
-- pytorch 1.11.0 + cu115
+## Test Enviornment
+- linux or MacOS, numpy: `1.24.0`, pytorch `1.11.0 + cu115`
+- Docker container, base image: `nvcr.io/nvidia/pytorch:19.04-py3`
 
 ## Usage
 
