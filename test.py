@@ -17,6 +17,7 @@ opt.no_flip = True  # no flip
 
 data_loader = CreateDataLoader(opt)
 dataset = data_loader.load_data()
+mask_values = data_loader.dataset.mask_values if opt.mask_output else None
 visualizer = Visualizer(opt)
 # create website
 web_dir = os.path.join(opt.results_dir, opt.name, '%s_%s' % (opt.phase, opt.which_epoch))
@@ -42,8 +43,12 @@ for i, data in enumerate(dataset):
     minibatch = 1     
     generated = model.inference(data['label'], data['image'])
     
-    visuals = OrderedDict([('input_label', util.tensor2label(data['label'][0], opt.label_nc, normalize=(not opt.no_norm_input), stats=(not opt.define_norm))),
+    if not opt.mask_output:
+        visuals = OrderedDict([('input_label', util.tensor2label(data['label'][0], opt.label_nc, normalize=(not opt.no_norm_input), stats=(not opt.define_norm))),
                             ('synthesized_image', util.tensor2im(generated.data[0], normalize=(not opt.no_norm_input), default_stats=(not opt.define_norm)))])
+    else:
+        visuals = OrderedDict([('input_label', util.masks2im(data['label'][0], mask_values=mask_values)),
+                            ('synthesized_image', util.masks2im(generated.data[0], mask_values=mask_values))])
        
     img_path = data['path']
     print('process image... %s' % img_path)

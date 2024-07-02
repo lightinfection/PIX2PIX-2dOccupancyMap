@@ -226,7 +226,7 @@ class GlobalGenerator(nn.Module):
             skip_connection = skip_connections[idx//jump]
             if x.shape != skip_connection.shape:
                 x = TF.resize(x, size=skip_connection.shape[2:], interpolation=TF.InterpolationMode.NEAREST)
-            skip_connection = self.ups[idx+1](x, skip_connection)
+            if jump == 3: skip_connection = self.ups[idx+1](x, skip_connection)
             x_concat = torch.cat((skip_connection,x), dim=1)
             x = self.ups[idx+jump-1](x_concat)
         output = self.ups[-1](x)
@@ -283,7 +283,8 @@ class PipeBlock(nn.Module):
                 model = [nn.Conv2d(dim_in, dim_in, kernel_size=3, padding=1), norm_layer(dim_in), activation,
                          nn.ReflectionPad2d(3), nn.Conv2d(dim_in, dim_out, kernel_size=7, padding=0)]
                 if use_activation:
-                    model += [nn.Sigmoid()] if use_sigmoid else [nn.Tanh()]
+                    if dim_out == 1: model += [nn.Sigmoid()] if use_sigmoid else [nn.Tanh()]
+                    else: model += [nn.Softmax(dim=1)]
         else:
             model = [#nn.Conv2d(dim_in, dim_out, kernel_size=3, stride=2, padding=1), norm_layer(dim_out), activation, 
                     nn.MaxPool2d(2),

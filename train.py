@@ -107,9 +107,14 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
 
         ### display output images
         if save_fake:
-            visuals = OrderedDict([('input_label', util.tensor2label(data['label'][0], opt.label_nc, normalize=not opt.no_norm_input, stats=not opt.define_norm)),
-                                   ('synthesized_image', util.tensor2im(generated.data[0], normalize=not opt.no_norm_input, default_stats=not opt.define_norm)),
-                                   ('real_image', util.tensor2im(data['image'][0], normalize=not opt.no_norm_input, default_stats=not opt.define_norm))])
+            if not opt.mask_output:
+                visuals = OrderedDict([('input_label', util.tensor2label(data['label'][0], opt.label_nc, normalize=not opt.no_norm_input, stats=not opt.define_norm)),
+                                    ('synthesized_image', util.tensor2im(generated.data[0], normalize=not opt.no_norm_input, default_stats=not opt.define_norm)),
+                                    ('real_image', util.tensor2im(data['image'][0], normalize=not opt.no_norm_input, default_stats=not opt.define_norm))])
+            else:
+                visuals = OrderedDict([('input_label', util.masks2im(data['label'][0], mask_values=mask_values)),
+                                    ('synthesized_image', util.masks2im(generated.data[0], mask_values=mask_values)),
+                                    ('real_image', util.masks2im(data['image'][0], mask_values=mask_values))])
             visualizer.display_current_results(visuals, epoch, total_steps)
 
         ### save latest model

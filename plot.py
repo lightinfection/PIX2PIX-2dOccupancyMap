@@ -12,7 +12,6 @@ def main(argv):
     G_VGG = []
     D_real = []
     D_fake = []
-    total_data =[]
     epoch = []
 
     with open(file,'r') as f:
@@ -49,22 +48,13 @@ def main(argv):
         del D_real[i]
         del D_fake[i]
 
-        total_data = [(
-            G_GAN [i] + 
-            G_GAN_Feat[i] +
-            G_VGG[i] +
-            D_real[i] +
-            D_fake[i]
-            ) for i in range(len(G_GAN))]
-    
     plt.figure()#(figsize=(50,6))
     ax = np.linspace(0,len(G_GAN)-1,len(G_GAN))
-    plt.plot(ax, total_data, label="total")
     plt.plot(ax,G_GAN,label="G_GAN")
     plt.plot(ax,G_GAN_Feat,label="G_GAN_Feat")
     plt.plot(ax,G_VGG,label="G_VGG")
     plt.plot(ax,D_real,label="D_real")
-    plt.plot(ax,D_real,label="D_fake")
+    plt.plot(ax,D_fake,label="D_fake")
     
     plt.grid(color='gray', linestyle='--', linewidth=1, alpha=0.3)
     plt.legend()

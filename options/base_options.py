@@ -27,7 +27,6 @@ class BaseOptions():
         self.parser.add_argument('--label_nc', type=int, default=0, help='# of input image channels')
         self.parser.add_argument('--input_nc', type=int, default=1, help='# of input image channels')
         self.parser.add_argument('--output_nc', type=int, default=1, help='# of output image channels')
-        # self.parser.add_argument('--output_classes', type=int, default=1, help='# of output image mask classes')
 
         # for setting inputs
         self.parser.add_argument('--dataroot', type=str, default='./maps/map/', help='raw pgm dataroot') 

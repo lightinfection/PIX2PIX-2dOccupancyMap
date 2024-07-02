@@ -1,0 +1,19 @@
+python3 ../train.py --no_instance \
+                    --checkpoints_dir ../checkpoints/ \
+                    --name w_mask_att \
+                    --dataroot ../maps/map/ \
+                    --saveroot ../maps/w/ \
+                    --valroot ../maps/val/ \
+                    --gpu_ids 0 \
+                    --save_epoch_freq 10 \
+                    --loadSize 128 \
+                    --crop_and_resize \
+                    --randomCrop \
+                    --flip \
+                    --rotate \
+                    --mask_output \
+                    --attention \
+                    --label_nc 3 \
+                    --output_nc 3 \
+                    --ngf 32 \
+                    --lambda_feat 5

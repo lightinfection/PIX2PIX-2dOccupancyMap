@@ -1,1 +1,1 @@
-python3 ../plot.py ../checkpoints/w/
+python3 ../plot.py ../checkpoints/w_mask/

@@ -1,0 +1,13 @@
+python3 ../test.py --no_instance \
+                    --checkpoints_dir ../checkpoints/ \
+                    --name w_mask_att \
+                    --dataroot ../maps/val/ \
+                    --results_dir ../results/ \
+                    --gpu_ids 0 \
+                    --loadSize 128 \
+                    --mask_output \
+                    --attention \
+                    --label_nc 3 \
+                    --output_nc 3 \
+                    --ngf 32 \
+                    --which_epoch 160

@@ -23,6 +23,20 @@ def tensor2im(image_tensor, imtype=np.uint8, normalize=True, default_stats=True)
         image_numpy = image_numpy[:,:,0]
     return image_numpy.astype(imtype)
 
+def masks2im(image_tensor, imtype=np.uint8, mask_values=[0, 205, 254], debug=False):
+    if isinstance(image_tensor, list):
+        image_numpy = []
+        for i in range(len(image_tensor)):
+            image_numpy.append(masks2im(image_tensor[i], imtype, mask_values))
+        return image_numpy
+    image_numpy = image_tensor.cpu().float().numpy()
+    image_genereated = np.zeros(image_numpy.shape[-2:], dtype=imtype)
+    mask_idx = np.argmax(image_numpy, axis=0)
+    for i, v in enumerate(mask_values):
+        image_genereated[mask_idx == i] = v
+    if debug: print(np.unique(image_numpy), np.unique(mask_idx), np.unique(image_genereated))
+    return image_genereated
+
 # Converts a one-hot tensor into a colorful label map
 def tensor2label(label_tensor, n_label, imtype=np.uint8, normalize=True, stats=True):
     if n_label == 0:

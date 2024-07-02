@@ -1,7 +1,8 @@
 import os.path
+import numpy as np
 import torchvision.transforms as transforms
 from yaml import load, BaseLoader
-from data.prepare import BaseDataset, pgm, augmentor, uniform_data
+from data.prepare import BaseDataset, pgm, augmentor, uniform_data, FREE_PIXEL, OCC_PIXEL, UNKNOWN_PIXEL
 
 # from multiprocessing import Pool
 # from tqdm import tqdm
@@ -80,10 +81,27 @@ class AlignedDataset(BaseDataset):
             except Exception:
                 print("yaml files of pgm for test were not successfully updated:", Exception.args())
         if opt.isTrain:
-            self.A_input = sorted([(e[0], e[1] / 255.0) for e in mmwave_map.session + mmwave_obj.session], key = lambda map: map[0])
-            self.B_input = sorted([(e[0], e[1] / 255.0) for e in lidar_map.session + lidar_obj.session], key = lambda map: map[0])
+            self.A_input = sorted([(e[0], e[1]) for e in mmwave_map.session + mmwave_obj.session], key = lambda map: map[0])
+            self.B_input = sorted([(e[0], e[1]) for e in lidar_map.session + lidar_obj.session], key = lambda map: map[0])
         else:
-            self.A_input = [(e[0], e[1] / 255.0) for e in val_mmwave.val_session]
+            self.A_input = [(e[0], e[1]) for e in val_mmwave.val_session]
+
+        ### Mask Values
+        if opt.mask_output:
+            assert opt.output_nc==3, "There are only three unique mask values of 2d OccupancyGrid map: Occ, Free, Unknown"
+            self.mask_values = [OCC_PIXEL, UNKNOWN_PIXEL, FREE_PIXEL]
+
+    def im2masktensor(self, img_arr):
+        if isinstance(img_arr, np.ndarray):
+            mask = np.zeros((img_arr.shape[0], img_arr.shape[1], self.opt.output_nc))
+            if len(img_arr.shape) > 2: img_arr = img_arr[:,:,0]
+            for i, row in enumerate(img_arr):
+                for j, col in enumerate(row):
+                    if int(col) == OCC_PIXEL: mask[i][j][0] = 1
+                    if int(col) == UNKNOWN_PIXEL: mask[i][j][1] = 1
+                    if int(col) == FREE_PIXEL: mask[i][j][2] = 1
+            totensor = transforms.ToTensor()
+            return totensor(mask.astype(np.float32))
 
     def __getitem__(self, index):        
         A_path = self.A_input[index][0]
@@ -94,30 +112,10 @@ class AlignedDataset(BaseDataset):
         if not self.opt.no_norm_input:
             transform_list += [transforms.Normalize((0.5), (0.5))] if not self.opt.define_norm else [transforms.Normalize((0.80), (0.24))]
         transform_ = transforms.Compose(transform_list)
-        A_tensor = transform_(self.A_input[index][1])
+        A_tensor = transform_(self.A_input[index][1] / 255.0) if not self.opt.mask_output else self.im2masktensor(self.A_input[index][1])
         B_tensor = 0
-        if self.opt.isTrain: B_tensor = transform_(self.B_input[index][1])
-        
-        # A_tensor = transform_A(A.convert('RGB')) if self.opt.input_nc !=1 else transform_A(A.convert('L'))
-
-        # B_tensor = inst_tensor = feat_tensor = 0
-        # ### input B (real images)
-        # if self.opt.isTrain:
-        #     B.load_data(dst=dir_B_val)
-        #     B_path = self.B_paths[index]   
-        #     B = Image.open(B_path).convert('RGB') if self.opt.output_nc !=1 else Image.open(B_path).convert('L')
-        #     transform_B = get_transform(self.opt, params)
-        #     if self.opt.mask_output and self.opt.output_nc==1:
-        #         mask = np.zeros((B.size[1], B.size[0]),dtype=np.int64)
-        #         B_array = np.asarray(B)
-        #         for i, v in enumerate(self.mask_values):
-        #             if B_array.ndim == 2:
-        #                 mask[B_array == v] = i
-        #             else:
-        #                 mask[(B_array == v).all(-1)] = i
-        #         B_tensor = transform_B(Image.fromarray(mask.astype("uint8")))
-        #     if not self.opt.mask_output:
-        #         B_tensor = transform_B(B)                      
+        if self.opt.isTrain: 
+            B_tensor = transform_(self.B_input[index][1] / 255.0) if not self.opt.mask_output else self.im2masktensor(self.B_input[index][1])
 
         input_dict = {'label': A_tensor, 'image': B_tensor, 'path': A_path}
 

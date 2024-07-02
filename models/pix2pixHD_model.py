@@ -33,8 +33,7 @@ class Pix2PixHDModel(BaseModel):
             netG_input_nc += 1
         if self.use_features:
             netG_input_nc += opt.feat_num
-        real_output_nc = opt.output_nc if not self.opt.mask_output else opt.output_classes
-        self.netG = networks.define_G(netG_input_nc, real_output_nc, opt.ngf, opt.netG, 
+        self.netG = networks.define_G(netG_input_nc, opt.output_nc, opt.ngf, opt.netG, 
                                     opt.n_downsample_global, opt.n_blocks_global, opt.n_local_enhancers, 
                                     opt.n_blocks_local, opt.norm, gpu_ids=self.gpu_ids, 
                                     use_activation=not opt.define_norm, use_sigmoid=opt.no_norm_input, use_attention=opt.attention)
@@ -134,19 +133,6 @@ class Pix2PixHDModel(BaseModel):
         input_concat = input_label
         fake_image = self.netG.forward(input_concat)
 
-        if self.opt.mask_output:
-            with torch.no_grad():
-                output = fake_image.cpu()
-                output = F.interpolate(output, (fake_image.shape[-2], fake_image.shape[-1]), mode='bilinear')
-                if self.opt.output_classes > 1:
-                    mask = output.argmax(dim=1)
-                else:
-                    mask = torch.sigmoid(output) > 0.5
-            generated = [mask[i].long().squeeze().numpy() for i in range(fake_image.shape[0])]
-            if generated[0].ndim == 3:
-                generated = [np.argmax(generated[i], axis=0) for i in range(len(generated))]
-            fake_image = torch.from_numpy(np.asarray(generated)).float().unsqueeze(1).cuda()
-
         # Fake Detection and Loss
         pred_fake_pool = self.discriminate(input_label, fake_image, use_pool=True)
         loss_D_fake = self.criterionGAN(pred_fake_pool, False)        
@@ -193,27 +179,7 @@ class Pix2PixHDModel(BaseModel):
                 fake_image = self.netG.forward(input_concat)
         else:
             fake_image = self.netG.forward(input_concat)
-            
-            # Generate masked output based on fake image
-            if self.opt.mask_output:
-                if self.mask_values == [0, 1]:
-                    out = np.zeros((fake_image.shape[-2], fake_image.shape[-1]), dtype=bool)
-                else:
-                    out = np.zeros((fake_image.shape[-2], fake_image.shape[-1]), dtype=np.uint8)
-                with torch.no_grad():
-                    output = fake_image.cpu()
-                    output = F.interpolate(output, (fake_image.shape[-2], fake_image.shape[-1]), mode='bilinear')
-                    if self.opt.output_classes > 1:
-                        mask = output.argmax(dim=1)
-                    else:
-                        mask = torch.sigmoid(output) > 0.5
-                fake_image = mask[0].long().squeeze().numpy()
-                if fake_image.ndim == 3:
-                    fake_image = np.argmax(fake_image, axis=0)
-                for i, v in enumerate(self.mask_values):
-                    out[fake_image == i] = v
-                return out
-            
+        
         return fake_image
 
     def save(self, which_epoch, masks=None):
